@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Conflict Heatmap | Speed Intensity Analysis</title>
+    <meta name="description"
+        content="Interactive heatmap visualization of traffic conflicts with speed intensity analysis">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.85);
+            --bg-glass: rgba(15, 23, 42, 0.75);
+            --border-glass: rgba(99, 102, 241, 0.2);
+            --accent-indigo: #6366f1;
+            --accent-violet: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --accent-emerald: #10b981;
+            --accent-rose: #f43f5e;
+            --accent-amber: #f59e0b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --shadow-glow: 0 0 30px rgba(99, 102, 241, 0.15);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ---- Header ---- */
+        #app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            height: 60px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-brand .logo-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: var(--accent-indigo);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
+        }
+
+        .header-brand h1 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 24px;
+        }
+
+        .stat-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .stat-chip:hover {
+            background: rgba(99, 102, 241, 0.18);
+            border-color: rgba(99, 102, 241, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .stat-chip .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse-dot 2s infinite;
+        }
+
+        .dot-indigo {
+            background: var(--accent-indigo);
+        }
+
+        .dot-rose {
+            background: var(--accent-rose);
+        }
+
+        .dot-emerald {
+            background: var(--accent-emerald);
+        }
+
+        .dot-amber {
+            background: var(--accent-amber);
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: scale(0.85);
+            }
+        }
+
+        .stat-chip .value {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        /* ---- Map Container ---- */
+        #map {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        /* ---- Floating Sidebar ---- */
+        #sidebar {
+            position: fixed;
+            top: 76px;
+            left: 16px;
+            z-index: 900;
+            width: 300px;
+            max-height: calc(100vh - 92px);
+            overflow-y: auto;
+            border-radius: 16px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--border-glass);
+            box-shadow: var(--shadow-glow), 0 8px 32px rgba(0, 0, 0, 0.4);
+            padding: 20px;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+        }
+
+        #sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #sidebar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 2px;
+        }
+
+        .sidebar-section {
+            margin-bottom: 20px;
+        }
+
+        .sidebar-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            border-radius: 2px;
+            background: var(--accent-indigo);
+        }
+
+        /* ---- Legend ---- */
+        .legend-grid {
+            display: grid;
+            gap: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .legend-item:hover {
+            background: rgba(99, 102, 241, 0.08);
+            border-color: rgba(99, 102, 241, 0.2);
+            transform: translateX(4px);
+        }
+
+        .legend-item.active {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .legend-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            flex: 1;
+        }
+
+        .legend-count {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            background: rgba(99, 102, 241, 0.15);
+            padding: 2px 8px;
+            border-radius: 6px;
+        }
+
+        /* ---- Intensity Scale ---- */
+        .intensity-scale {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .scale-bar-container {
+            position: relative;
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: linear-gradient(90deg,
+                    #10b981 0%,
+                    #f59e0b 33%,
+                    #f97316 55%,
+                    #ef4444 75%,
+                    #dc2626 100%);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .scale-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ---- Filter Toggle Buttons ---- */
+        .filter-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .filter-btn {
+            padding: 7px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .filter-btn:hover {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.25);
+        }
+
+        .filter-btn.active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: var(--accent-indigo);
+            color: var(--text-primary);
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
+        }
+
+        /* ---- Custom Tooltip / Popup ---- */
+        .custom-popup .leaflet-popup-content-wrapper {
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.1);
+            color: var(--text-primary);
+            padding: 0;
+        }
+
+        .custom-popup .leaflet-popup-tip {
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-top: none;
+            border-left: none;
+        }
+
+        .custom-popup .leaflet-popup-content {
+            margin: 0;
+            min-width: 220px;
+        }
+
+        .popup-card {
+            padding: 16px;
+        }
+
+        .popup-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .popup-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .popup-header-text h3 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .popup-header-text span {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .popup-details {
+            display: grid;
+            gap: 8px;
+        }
+
+        .popup-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .popup-row .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .popup-row .value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .intensity-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .intensity-low {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+
+        .intensity-medium {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+
+        .intensity-high {
+            background: rgba(244, 63, 94, 0.15);
+            color: #fb7185;
+        }
+
+        /* Conflict type badges */
+        .conflict-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .conflict-vv {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+
+        .conflict-vp {
+            background: rgba(244, 63, 94, 0.15);
+            color: #fb7185;
+        }
+
+        /* ---- Circle Markers ---- */
+        .leaflet-interactive {
+            transition: opacity 0.3s ease;
+        }
+
+        /* ---- Sidebar Toggle ---- */
+        #sidebar-toggle {
+            position: fixed;
+            top: 76px;
+            left: 16px;
+            z-index: 950;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: 1px solid var(--border-glass);
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            color: var(--text-primary);
+            font-size: 18px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #sidebar-toggle:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: var(--accent-indigo);
+        }
+
+        .sidebar-hidden #sidebar {
+            transform: translateX(-340px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .sidebar-hidden #sidebar-toggle {
+            display: flex;
+        }
+
+        /* ---- Loading Overlay ---- */
+        #loading-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            transition: opacity 0.6s ease;
+        }
+
+        #loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader-ring {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 3px solid rgba(99, 102, 241, 0.15);
+            border-top-color: var(--accent-indigo);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loader-text {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 768px) {
+            #sidebar {
+                width: calc(100vw - 32px);
+                max-height: 50vh;
+                top: auto;
+                bottom: 16px;
+                left: 16px;
+            }
+
+            .header-stats {
+                display: none;
+            }
+
+            #app-header {
+                padding: 0 16px;
+            }
+        }
+    </style>
+</head>
+
+<body class="sidebar-hidden">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="loader-ring"></div>
+        <div class="loader-text">Initializing Heatmap…</div>
+    </div>
+
+    <!-- Header -->
+    <header id="app-header">
+        <div class="header-brand">
+            <div class="logo-icon">🔥</div>
+            <h1>Traffic Conflict Heatmap</h1>
+        </div>
+        <div class="header-stats" id="header-stats">
+            <!-- Dynamically filled -->
+        </div>
+    </header>
+
+    <!-- Sidebar Toggle (visible when sidebar hidden) -->
+    <button id="sidebar-toggle" title="Show Panel">☰</button>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+        <!-- Legend -->
+        <div class="sidebar-section">
+            <div class="section-title">Conflict Types</div>
+            <div class="legend-grid" id="legend-grid">
+                <!-- Dynamically filled -->
+            </div>
+        </div>
+
+        <!-- Intensity Scale -->
+        <div class="sidebar-section">
+            <div class="section-title">Intensity Scale</div>
+            <div class="intensity-scale">
+                <div class="scale-bar-container"></div>
+                <div class="scale-labels">
+                    <span>Low (2.0)</span>
+                    <span>Med (3.5)</span>
+                    <span>High (5.0)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="sidebar-section">
+            <div class="section-title">Filter by Vehicle</div>
+            <div class="filter-group" id="vehicle-filters">
+                <!-- Dynamically filled -->
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-title">Filter by Conflict</div>
+            <div class="filter-group" id="conflict-filters">
+                <!-- Dynamically filled -->
+            </div>
+        </div>
+
+        <!-- Toggle sidebar -->
+        <div class="sidebar-section" style="text-align:center; margin-top: 8px;">
+            <button id="hide-sidebar" style="
+                padding: 6px 16px;
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.08);
+                background: rgba(255,255,255,0.04);
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                font-family: 'Inter', sans-serif;
+                transition: all 0.25s ease;
+            ">Hide Panel</button>
+        </div>
+    </div>
+
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Heat Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <script>
+        // ============ DATA ============
+        const conflictData = [
+            { type: "v-v", lat: 25.149437, lng: 81.765226, vehicle: "car", speed: 70, intensity: 4.9 },
+            { type: "v-p", lat: 25.149347, lng: 81.765213, vehicle: "2 wheeler", speed: 50, intensity: 2.5 },
+            { type: "v-p", lat: 25.149363, lng: 81.765255, vehicle: "2 wheeler", speed: 55, intensity: 3.025 },
+            { type: "v-p", lat: 25.149304, lng: 81.765188, vehicle: "car", speed: 70, intensity: 4.9 },
+            { type: "v-p", lat: 25.149376, lng: 81.765261, vehicle: "car", speed: 65, intensity: 4.225 },
+            { type: "v-p", lat: 25.149379, lng: 81.765228, vehicle: "truck", speed: 45, intensity: 2.025 },
+            { type: "v-p", lat: 25.149439, lng: 81.765245, vehicle: "2 wheeler", speed: 50, intensity: 2.5 },
+            { type: "v-p", lat: 25.149274, lng: 81.765228, vehicle: "car", speed: 70, intensity: 4.9 },
+            { type: "v-p", lat: 25.149255, lng: 81.765222, vehicle: "2 wheeler", speed: 55, intensity: 3.025 },
+            { type: "v-p", lat: 25.149407, lng: 81.765355, vehicle: "car", speed: 65, intensity: 4.225 },
+            { type: "v-v", lat: 25.149464, lng: 81.765225, vehicle: "car", speed: 70, intensity: 4.9 },
+            { type: "v-p", lat: 25.149415, lng: 81.765394, vehicle: "2 wheeler", speed: 50, intensity: 2.5 },
+            { type: "v-p", lat: 25.149393, lng: 81.765235, vehicle: "2 wheeler", speed: 55, intensity: 3.025 },
+            { type: "v-p", lat: 25.14943, lng: 81.76528, vehicle: "2 wheeler", speed: 55, intensity: 3.025 },
+            { type: "v-p", lat: 25.14944, lng: 81.765282, vehicle: "2 wheeler", speed: 50, intensity: 2.5 },
+            { type: "v-p", lat: 25.149402, lng: 81.765357, vehicle: "truck", speed: 50, intensity: 2.5 }
+        ];
+
+        // ============ CONFIGURATION ============
+        const conflictConfig = {
+            "v-v": { label: "Vehicle ↔ Vehicle", color: "#f59e0b", icon: "🚗", cssClass: "conflict-vv" },
+            "v-p": { label: "Vehicle ↔ Pedestrian", color: "#f43f5e", icon: "🚶", cssClass: "conflict-vp" }
+        };
+
+        const vehicleIcons = {
+            "car": "🚗",
+            "2 wheeler": "🏍️",
+            "truck": "🚛"
+        };
+
+        // ============ STATE ============
+        let activeVehicles = new Set(["car", "2 wheeler", "truck"]);
+        let activeConflicts = new Set(["v-v", "v-p"]);
+        let map, heatLayer;
+        let markerLayer;
+
+        // ============ HELPERS ============
+        function getIntensityClass(val) {
+            if (val < 3) return "intensity-low";
+            if (val < 4) return "intensity-medium";
+            return "intensity-high";
+        }
+
+        function getIntensityLabel(val) {
+            if (val < 3) return "Low";
+            if (val < 4) return "Medium";
+            return "High";
+        }
+
+        function getFilteredData() {
+            return conflictData.filter(d =>
+                activeVehicles.has(d.vehicle) && activeConflicts.has(d.type)
+            );
+        }
+
+        // ============ MAP INIT ============
+        function initMap() {
+            map = L.map('map', {
+                center: [25.14937, 81.76527],
+                zoom: 19,
+                maxZoom: 22,
+                zoomControl: false
+            });
+
+            // Google Maps Satellite tile layer (high-zoom coverage)
+            L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: '&copy; Google Maps',
+                maxZoom: 22
+            }).addTo(map);
+
+            // Google Maps hybrid labels overlay (road/place names on satellite)
+            L.tileLayer('https://mt1.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
+                maxZoom: 22,
+                pane: 'overlayPane'
+            }).addTo(map);
+
+            // Zoom control bottom-right
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Create layers
+            markerLayer = L.layerGroup().addTo(map);
+
+            renderHeatmap();
+            renderMarkers();
+        }
+
+        // ============ HEATMAP ============
+        function renderHeatmap() {
+            if (heatLayer) {
+                map.removeLayer(heatLayer);
+            }
+
+            const data = getFilteredData();
+            const heatData = data.map(d => [d.lat, d.lng, d.intensity / 5]);
+
+            heatLayer = L.heatLayer(heatData, {
+                radius: 35,
+                blur: 25,
+                maxZoom: 22,
+                max: 1.0,
+                minOpacity: 0.4,
+                gradient: {
+                    0.0: '#10b981',
+                    0.3: '#f59e0b',
+                    0.55: '#f97316',
+                    0.75: '#ef4444',
+                    1.0: '#dc2626'
+                }
+            }).addTo(map);
+        }
+
+        // ============ MARKERS ============
+        function renderMarkers() {
+            markerLayer.clearLayers();
+            const data = getFilteredData();
+
+            data.forEach(d => {
+                const conf = conflictConfig[d.type];
+                const intClass = getIntensityClass(d.intensity);
+                const intLabel = getIntensityLabel(d.intensity);
+
+                const popupContent = `
+                    <div class="popup-card">
+                        <div class="popup-header">
+                            <div class="popup-icon" style="background: ${conf.color}22;">${conf.icon}</div>
+                            <div class="popup-header-text">
+                                <h3>${conf.label}</h3>
+                                <span>Traffic Conflict Point</span>
+                            </div>
+                        </div>
+                        <div class="popup-details">
+                            <div class="popup-row">
+                                <span class="label">Conflict Type</span>
+                                <span class="conflict-badge ${conf.cssClass}">${d.type.toUpperCase()}</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="label">Vehicle</span>
+                                <span class="value">${vehicleIcons[d.vehicle] || ''} ${d.vehicle}</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="label">Speed</span>
+                                <span class="value">${d.speed} km/h</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="label">Speed Intensity</span>
+                                <span class="intensity-badge ${intClass}">● ${d.intensity.toFixed(2)} (${intLabel})</span>
+                            </div>
+                            <div class="popup-row">
+                                <span class="label">Coordinates</span>
+                                <span class="value" style="font-size:11px;">${d.lat.toFixed(6)}, ${d.lng.toFixed(6)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                const markerColor = d.intensity >= 4 ? '#ef4444'
+                    : d.intensity >= 3 ? '#f59e0b'
+                        : '#10b981';
+
+                const marker = L.circleMarker([d.lat, d.lng], {
+                    radius: 7 + (d.intensity * 1.2),
+                    fillColor: markerColor,
+                    color: '#fff',
+                    weight: 1.5,
+                    opacity: 0.9,
+                    fillOpacity: 0.7,
+                    className: 'conflict-marker'
+                });
+
+                marker.bindPopup(popupContent, {
+                    className: 'custom-popup',
+                    maxWidth: 280,
+                    closeButton: true
+                });
+
+                // Hover tooltip
+                marker.bindTooltip(
+                    `<strong>${conf.label}</strong><br>${vehicleIcons[d.vehicle] || ''} ${d.vehicle} — ${d.speed} km/h<br>Intensity: ${d.intensity.toFixed(2)}`,
+                    {
+                        direction: 'top',
+                        offset: [0, -10],
+                        className: 'custom-tooltip'
+                    }
+                );
+
+                marker.on('mouseover', function () {
+                    this.setStyle({ weight: 3, fillOpacity: 1, radius: 9 + (d.intensity * 1.2) });
+                });
+                marker.on('mouseout', function () {
+                    this.setStyle({ weight: 1.5, fillOpacity: 0.7, radius: 7 + (d.intensity * 1.2) });
+                });
+
+                markerLayer.addLayer(marker);
+            });
+        }
+
+        // ============ UI RENDERING ============
+        function renderHeaderStats() {
+            const data = getFilteredData();
+            const totalConflicts = data.length;
+            const avgIntensity = data.length ? (data.reduce((s, d) => s + d.intensity, 0) / data.length).toFixed(2) : '0.00';
+            const maxSpeed = data.length ? Math.max(...data.map(d => d.speed)) : 0;
+            const vpCount = data.filter(d => d.type === 'v-p').length;
+
+            document.getElementById('header-stats').innerHTML = `
+                <div class="stat-chip"><div class="dot dot-indigo"></div>Points <span class="value">${totalConflicts}</span></div>
+                <div class="stat-chip"><div class="dot dot-amber"></div>Avg Intensity <span class="value">${avgIntensity}</span></div>
+                <div class="stat-chip"><div class="dot dot-emerald"></div>V-P Conflicts <span class="value">${vpCount}</span></div>
+            `;
+        }
+
+        function renderLegend() {
+            const data = getFilteredData();
+            const grid = document.getElementById('legend-grid');
+            grid.innerHTML = '';
+
+            Object.entries(conflictConfig).forEach(([key, conf]) => {
+                const count = data.filter(d => d.type === key).length;
+                const item = document.createElement('div');
+                item.className = 'legend-item active';
+                item.innerHTML = `
+                    <div class="legend-color" style="background: ${conf.color};"></div>
+                    <span class="legend-label">${conf.icon} ${conf.label}</span>
+                    <span class="legend-count">${count}</span>
+                `;
+                grid.appendChild(item);
+            });
+        }
+
+        function renderVehicleFilters() {
+            const container = document.getElementById('vehicle-filters');
+            container.innerHTML = '';
+
+            const allBtn = document.createElement('button');
+            allBtn.className = 'filter-btn' + (activeVehicles.size === 3 ? ' active' : '');
+            allBtn.textContent = '🔘 All';
+            allBtn.addEventListener('click', () => {
+                activeVehicles = new Set(["car", "2 wheeler", "truck"]);
+                updateAll();
+            });
+            container.appendChild(allBtn);
+
+            [["car", "🚗 Car"], ["2 wheeler", "🏍️ 2 Wheeler"], ["truck", "🚛 Truck"]].forEach(([key, label]) => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn' + (activeVehicles.has(key) ? ' active' : '');
+                btn.textContent = label;
+                btn.addEventListener('click', () => {
+                    if (activeVehicles.has(key) && activeVehicles.size > 1) {
+                        activeVehicles.delete(key);
+                    } else if (!activeVehicles.has(key)) {
+                        activeVehicles.add(key);
+                    }
+                    updateAll();
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        function renderConflictFilters() {
+            const container = document.getElementById('conflict-filters');
+            container.innerHTML = '';
+
+            const allBtn = document.createElement('button');
+            allBtn.className = 'filter-btn' + (activeConflicts.size === 2 ? ' active' : '');
+            allBtn.textContent = '🔘 All';
+            allBtn.addEventListener('click', () => {
+                activeConflicts = new Set(["v-v", "v-p"]);
+                updateAll();
+            });
+            container.appendChild(allBtn);
+
+            Object.entries(conflictConfig).forEach(([key, conf]) => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn' + (activeConflicts.has(key) ? ' active' : '');
+                btn.textContent = `${conf.icon} ${key.toUpperCase()}`;
+                btn.addEventListener('click', () => {
+                    if (activeConflicts.has(key) && activeConflicts.size > 1) {
+                        activeConflicts.delete(key);
+                    } else if (!activeConflicts.has(key)) {
+                        activeConflicts.add(key);
+                    }
+                    updateAll();
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        function updateAll() {
+            renderHeatmap();
+            renderMarkers();
+            renderHeaderStats();
+            renderLegend();
+            renderVehicleFilters();
+            renderConflictFilters();
+        }
+
+        // ============ SIDEBAR TOGGLE ============
+        document.getElementById('hide-sidebar').addEventListener('click', () => {
+            document.body.classList.add('sidebar-hidden');
+        });
+
+        document.getElementById('sidebar-toggle').addEventListener('click', () => {
+            document.body.classList.remove('sidebar-hidden');
+        });
+
+        // ============ INIT ============
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            renderHeaderStats();
+            renderLegend();
+            renderVehicleFilters();
+            renderConflictFilters();
+
+            // Hide loader
+            setTimeout(() => {
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }, 800);
+        });
+    </script>
+
+    <!-- Custom Tooltip Styles (injected to override Leaflet defaults) -->
+    <style>
+        .custom-tooltip {
+            background: rgba(15, 23, 42, 0.92) !important;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(99, 102, 241, 0.25) !important;
+            border-radius: 10px !important;
+            color: #f1f5f9 !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 12px !important;
+            padding: 8px 12px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+            line-height: 1.5 !important;
+        }
+
+        .custom-tooltip::before {
+            border-top-color: rgba(15, 23, 42, 0.92) !important;
+        }
+
+        /* Leaflet overrides for dark theme */
+        .leaflet-control-zoom a {
+            background: rgba(15, 23, 42, 0.85) !important;
+            color: #f1f5f9 !important;
+            border-color: rgba(99, 102, 241, 0.2) !important;
+            backdrop-filter: blur(12px);
+        }
+
+        .leaflet-control-zoom a:hover {
+            background: rgba(99, 102, 241, 0.25) !important;
+        }
+
+        .leaflet-control-attribution {
+            background: rgba(15, 23, 42, 0.7) !important;
+            color: #64748b !important;
+            font-size: 10px !important;
+        }
+
+        .leaflet-control-attribution a {
+            color: #6366f1 !important;
+        }
+
+        .leaflet-popup-close-button {
+            color: #94a3b8 !important;
+            font-size: 20px !important;
+            padding: 6px 10px 0 0 !important;
+        }
+
+        .leaflet-popup-close-button:hover {
+            color: #f1f5f9 !important;
+        }
+    </style>
+</body>
+
+</html>
